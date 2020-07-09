@@ -1,3 +1,5 @@
+import asyncio
+import functools
 import shlex
 from collections import namedtuple
 
@@ -35,7 +37,7 @@ def add_flag(*flag_names, **kwargs):
             nfunc = func
 
         if not hasattr(nfunc, '_def_parser'):
-            nfunc._def_parser = _parser.DontExitArgumentParser()
+            nfunc._def_parser = _parser.DontExitArgumentParser(loop=asyncio.get_event_loop())
         nfunc._def_parser.add_argument(*flag_names, **kwargs)
         return func
     return inner
@@ -46,7 +48,12 @@ class FlagCommand(commands.Command):
         if not hasattr(self.callback, '_def_parser'):
             return
         arg = ctx.view.read_rest()
-        namespace = self.callback._def_parser.parse_args(shlex.split(arg), ctx=ctx)
+        loop = asyncio.get_event_loop()
+        partial = functools.partial(self.callback._def_parser.parse_args, shlex.split(arg), ctx=ctx)
+        namespace = await loop.run_in_executor(
+            None,
+            partial
+        )
         ctx.kwargs.update(vars(namespace))
 
     @property

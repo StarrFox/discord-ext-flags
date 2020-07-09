@@ -1,10 +1,11 @@
 import argparse
+import asyncio
+import inspect
 import sys
 
-from discord.utils import escape_mentions
 from discord.ext import commands
-
-from ._converters import CONVERTERS
+from discord.ext.commands import converter as _discord_converters
+from discord.utils import escape_mentions
 
 
 class ArgumentParsingError(commands.CommandError):
@@ -16,21 +17,34 @@ class DontExitArgumentParser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
         self.ctx = None
         kwargs.pop('add_help', False)
+        self.loop = kwargs.pop("loop", None)
         super().__init__(*args, add_help=False, **kwargs)
 
     def error(self, message):
         raise ArgumentParsingError(message)
 
     def _get_value(self, action, arg_string):
-        ctx = False
+        pass_ctx = False
         type_func = self._registry_get('type', action.type, action.type)
 
-        if hasattr(type_func, '__module__') and type_func.__module__.startswith('discord'):
-            try:
-                type_func = CONVERTERS[type_func.__name__]
-            except KeyError:
+        if hasattr(type_func, '__module__') and type_func.__module__.startswith('discord.'):
+            type_func = getattr(_discord_converters, type_func.__name__ + 'Converter', None)
+            if type_func is None:
                 raise KeyError("{!r} is not a valid converter type", type_func)
-            ctx = True
+
+            instance = type_func()
+            type_func = instance.convert
+
+            pass_ctx = True
+
+        if isinstance(type_func, commands.Converter):
+            type_func = type_func.convert
+            pass_ctx = True
+
+        if inspect.isclass(type_func) and issubclass(type_func, commands.Converter):
+            instance = type_func()
+            type_func = instance.convert
+            pass_ctx = True
 
         if not callable(type_func):
             msg = '%r is not callable'
@@ -38,8 +52,10 @@ class DontExitArgumentParser(argparse.ArgumentParser):
 
         # convert the value to the appropriate type
         try:
-            if ctx:
-                result = type_func(self.ctx, arg_string)
+            if pass_ctx:
+                future = asyncio.run_coroutine_threadsafe(type_func(self.ctx, arg_string), self.loop)
+                result = future.result()
+
             else:
                 result = type_func(arg_string)
 

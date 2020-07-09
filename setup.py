@@ -1,12 +1,14 @@
-from setuptools import setup
+import re
 
-version = "2.1.1"
+from setuptools import setup
 
 with open("README.md") as f:
     readme = f.read()
 
-with open("requirements.txt") as f:
-    requirements = f.read().split("\n")
+with open("discord/ext/flags/__init__.py") as f:
+    version = re.search(
+        r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE
+    ).group(1)
 
 setup(
     name="discord-flags",
@@ -19,7 +21,7 @@ setup(
     long_description=readme,
     long_description_content_type="text/markdown",
     include_package_data=True,
-    install_requires=requirements,
+    install_requires=["discord.py>=1.2.5"],
     extras_require=None,
     classifiers=[
         'Development Status :: 5 - Production/Stable',
